@@ -1,0 +1,11 @@
+pyyaml
+json
+ctypes
+pdfplumber
+watchdog
+pydantic
+openai
+base64
+pdf2image
+tempfile
+win11toast
