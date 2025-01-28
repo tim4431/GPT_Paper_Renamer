@@ -4,5 +4,4 @@ watchdog
 pydantic
 openai
 pdf2image
-tempfile
 win11toast
