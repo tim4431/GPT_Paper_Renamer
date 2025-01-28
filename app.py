@@ -27,12 +27,28 @@ class PDFHandler(FileSystemEventHandler):
         self.client = OpenAI(api_key=self.api_key)
         self.prompt = config["prompt"]
         super().__init__()
+        self.processed_files = set()
+
+    def on_moved(self, event):
+        # FileMovedEvent(src_path='C://Users//Tim//Downloads\\science.aav9105.pdf.crdownload',
+        # dest_path='C://Users//Tim//Downloads\\science.aav9105.pdf', event_type='moved', is_directory=False, is_synthetic=False)
+        if (
+            not event.is_directory
+            and event.src_path.lower().endswith(".pdf.crdownload")
+            and event.dest_path.lower().endswith(".pdf")
+        ):
+            print(f"File Moved: {event}")
+            time.sleep(1)  # Allow time for file to be fully written
+            if os.path.exists(event.dest_path):
+                self.process_pdf_with_llm(event.dest_path)
 
     def on_created(self, event):
+        # File Created: FileCreatedEvent(src_path='C://Users//Tim//Downloads\\thorlabs.pdf', dest_path='', event_type='created', is_directory=False, is_synthetic=False)
         if not event.is_directory and event.src_path.lower().endswith(".pdf"):
+            print(f"File Created: {event}")
             time.sleep(1)  # Allow time for file to be fully written
-            if os.path.exists(event.src_path):
-                self.process_pdf_with_llm(event.src_path)
+            if os.path.exists(event.dest_path):
+                self.process_pdf_with_llm(event.dest_path)
 
     def encode_image(self, image_path):
         """
@@ -42,6 +58,9 @@ class PDFHandler(FileSystemEventHandler):
             return base64.b64encode(image_file.read()).decode("utf-8")
 
     def process_pdf_with_llm(self, file_path):
+        if file_path in self.processed_files:
+            print(f"Already processed: {file_path}")
+            return
         dirname, filenameext = os.path.split(file_path)
         filename, ext = os.path.splitext(filenameext)
         #
@@ -97,11 +116,11 @@ class PDFHandler(FileSystemEventHandler):
                 # amt_str = parsed.get("amount", "0.0")
                 is_paper = parsed.get("is_paper", False)
                 title = parsed.get("title", "")
-                authors = parsed.get("authors", "")
+                author = parsed.get("author", "")
                 #
                 print(f"Physics paper: {is_paper}")
                 print(f"Title: {title}")
-                print(f"Author: {authors}")
+                print(f"Author: {author}")
                 new_name = f"{title}({filename}){ext}"
 
                 if is_paper:
@@ -159,6 +178,7 @@ class PDFHandler(FileSystemEventHandler):
         else:
             os.rename(old_path, new_path)
             print(f"Renamed:\n{old_path}\nto\n{new_path}")
+            self.processed_files.add(new_path)
             return True
 
 
@@ -169,13 +189,21 @@ def load_config():
 
 if __name__ == "__main__":
     config = load_config()
+    notify(
+        "GPT Paper Renamer",
+        "GPT Paper Renamer is running...",
+        # duration="long",
+    )
+    # list number of files in the watch folder
+    files = os.listdir(config["watch_folder"])
+    print(len(files))
     event_handler = PDFHandler(config)
     observer = Observer()
     observer.schedule(event_handler, path=config["watch_folder"], recursive=False)
     observer.start()
 
     try:
-        print(f"Monitoring {config['watch_folder']} for physics papers...")
+        print(f"Monitoring {config['watch_folder']} for papers...")
         while True:
             time.sleep(1)
     except KeyboardInterrupt:

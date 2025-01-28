@@ -9,4 +9,10 @@ def on_click(response):
         print("User clicked No")
 
 
-toast("Question", "Do you want to continue?", buttons=["Yes", "No"], on_click=on_click)
+toast(
+    "Question",
+    "Do you want to continue?",
+    buttons=["Yes", "No"],
+    on_click=on_click,
+    duration="permanent",
+)
