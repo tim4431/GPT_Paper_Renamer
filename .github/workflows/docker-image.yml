@@ -15,4 +15,4 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag GPT_Paper_Renamer:latest
+      run: docker build . --file Dockerfile --tag gpt_paper_renamer:latest
