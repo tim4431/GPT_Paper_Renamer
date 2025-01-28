@@ -1,5 +1,4 @@
 pyyaml
-ctypes
 pdfplumber
 watchdog
 pydantic
