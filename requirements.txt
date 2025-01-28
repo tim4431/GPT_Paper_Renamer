@@ -1,5 +1,4 @@
 pyyaml
-json
 ctypes
 pdfplumber
 watchdog
