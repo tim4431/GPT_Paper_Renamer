@@ -65,13 +65,16 @@ def main(argv: list[str] | None = None) -> int:
     _configure_logging("INFO")
     log.info("--- startup ---")
 
-    from src import autostart
+    from src import autostart, winapp
     from src.config import load_config, update_yaml
     from src.confirm import ask_yes_no
     from src.extractor import MetadataExtractor
     from src.handler import PDFEventHandler, PDFRenameWorker
     from src.tray import Tray
     from watchdog.observers import Observer
+
+    # Windows: register the AppUserModelID so toasts show "GPT Paper Renamer".
+    winapp.configure()
 
     # Self-heal a stale autostart entry after the user moves the project.
     autostart.refresh_if_enabled()

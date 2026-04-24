@@ -5,4 +5,5 @@ watchdog>=4.0
 pymupdf>=1.24
 pystray>=0.19
 Pillow>=10.0
+win11toast>=0.35; sys_platform == "win32"
 pyobjc-framework-Cocoa>=10; sys_platform == "darwin"
