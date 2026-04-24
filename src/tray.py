@@ -77,6 +77,7 @@ class Tray:
         is_confirm: Optional[Callable[[], bool]] = None,
         on_autostart_changed: Optional[Callable[[bool], None]] = None,
         is_autostart: Optional[Callable[[], bool]] = None,
+        on_settings: Optional[Callable[[], None]] = None,
         log_path: Optional[Path] = None,
         startup_message: Optional[str] = None,
     ) -> None:
@@ -88,6 +89,7 @@ class Tray:
         self._is_confirm = is_confirm
         self._on_autostart_changed = on_autostart_changed
         self._is_autostart = is_autostart
+        self._on_settings = on_settings
         self._log_path = log_path
         self._startup_message = startup_message
         self._icon = Icon(
@@ -130,6 +132,10 @@ class Tray:
                 lambda _: _open_path(self._log_path) if self._log_path else None,
                 enabled=self._log_path is not None,
             ),
+        ]
+        if self._on_settings is not None:
+            items.append(MenuItem("Settings...", lambda _: self._on_settings()))
+        items += [
             Menu.SEPARATOR,
             MenuItem("Quit", self._quit),
         ]

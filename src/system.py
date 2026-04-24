@@ -15,6 +15,7 @@ operating system so it behaves like a real desktop app":
 from __future__ import annotations
 
 import logging
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -68,6 +69,32 @@ def configure_app_id() -> Optional[str]:
     except Exception:
         log.exception("Failed to set AppUserModelID")
         return None
+
+
+# === Settings wizard launcher ==============================================
+
+def open_settings() -> None:
+    """Spawn the CLI wizard in a new terminal window (detached from the tray)."""
+    root = _project_root()
+    try:
+        if sys.platform == "win32":
+            python = root / ".venv" / "Scripts" / "python.exe"
+            subprocess.Popen(
+                [str(python), "-m", "src.wizard"],
+                cwd=str(root),
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+            )
+        elif sys.platform == "darwin":
+            python = root / ".venv" / "bin" / "python3"
+            script = f"cd {shlex.quote(str(root))} && {shlex.quote(str(python))} -m src.wizard"
+            subprocess.Popen(
+                ["osascript", "-e",
+                 f'tell application "Terminal" to do script {shlex.quote(script)}'],
+            )
+        else:
+            log.warning("open_settings not implemented for %s", sys.platform)
+    except Exception:
+        log.exception("Failed to launch settings wizard")
 
 
 # === Autostart ==============================================================

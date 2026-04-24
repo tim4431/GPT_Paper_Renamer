@@ -21,10 +21,11 @@ On first launch the script creates a local `.venv/`, installs dependencies, runs
 |---|---|
 | Watching: *folder* | info only |
 | **Pause / Resume** | stop/start reacting to new files |
-| **Ask before rename** | toggle the Yes/No dialog before each rename (persisted to `config.yaml`) |
+| **Ask before rename** | toggle Rename/Cancel prompt before each rename (persisted to `config.yaml`) |
 | **Start at login** | toggle autostart (Windows registry / macOS LaunchAgent) |
 | Open watch folder | reveal in Explorer/Finder |
 | View log | open `app.log` |
+| **Settings...** | open the CLI wizard in a new terminal (change key, folder, format, re-install .venv) |
 | Quit | clean shutdown |
 
 Green icon = active · grey = paused.
@@ -43,9 +44,12 @@ All settings live in [config.yaml](config.yaml) (written by the wizard, re-writt
 
 | Need | Do |
 |---|---|
-| Change an answer | `python -m src.wizard` (pre-fills current values) |
-| Fresh config | delete `config.yaml`, relaunch |
+| Change one answer | tray → **Settings...**, pick an option in the menu |
+| Force a fresh config | delete `config.yaml`, relaunch |
+| Re-install dependencies | tray → **Settings...** → **Re-install .venv**, then quit & relaunch |
 | Full clean install | delete `.venv/` and `config.yaml`, relaunch |
+
+The wizard shows current values and asks **y/N** before editing each setting, so it's safe to browse without changing anything.
 
 ## Headless
 

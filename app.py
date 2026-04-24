@@ -145,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
         is_confirm=lambda: worker.require_confirmation,
         on_autostart_changed=(system.set_autostart if autostart_supported else None),
         is_autostart=(system.autostart_enabled if autostart_supported else None),
+        on_settings=system.open_settings,
         log_path=LOG_FILE,
         startup_message=startup_message,
     )

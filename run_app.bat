@@ -4,6 +4,13 @@ REM then launches the tray app with pythonw (no console window).
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 
+REM Wizard's 'Re-install .venv' option drops this sentinel. Honor it.
+if exist ".reinstall_venv" (
+    echo Re-install requested by wizard. Wiping .venv ...
+    del /q ".reinstall_venv"
+    if exist ".venv" rmdir /s /q ".venv"
+)
+
 if not exist ".venv\Scripts\pythonw.exe" (
     call :find_python PY_CMD
     if not defined PY_CMD (

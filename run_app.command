@@ -5,6 +5,13 @@
 set -e
 cd "$(dirname "$0")"
 
+# Wizard's 'Re-install .venv' option drops this sentinel. Honor it.
+if [ -f ".reinstall_venv" ]; then
+    echo "Re-install requested by wizard. Wiping .venv ..."
+    rm -f ".reinstall_venv"
+    rm -rf ".venv"
+fi
+
 if [ ! -x ".venv/bin/python3" ]; then
     if ! command -v python3 >/dev/null 2>&1; then
         echo "ERROR: python3 not found. Install Python 3.10+ (e.g. 'brew install python')."
