@@ -1,3 +1,16 @@
-*.yaml
-/test
+# Secrets
+.env
+config.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Logs / test fixtures
 *.log
+/test

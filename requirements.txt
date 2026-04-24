@@ -1,7 +1,8 @@
-pyyaml
-pdfplumber
-watchdog
-pydantic
-openai
-pdf2image
-win11toast
+openai>=1.60
+pydantic>=2.7
+pyyaml>=6.0
+watchdog>=4.0
+pymupdf>=1.24
+pystray>=0.19
+Pillow>=10.0
+pyobjc-framework-Cocoa>=10; sys_platform == "darwin"

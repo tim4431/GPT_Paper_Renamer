@@ -1,193 +1,167 @@
-import os
-import time
-import yaml
-import json
-import ctypes
-import base64
-import tempfile
-import pdf2image
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
-from pydantic import BaseModel
-from openai import OpenAI
-from win11toast import notify, update_progress, toast
-import atexit
+"""Entry point for the GPT Paper Renamer tray app (Windows + macOS)."""
 
-INVALID_CHARS = '<>:"/\\|?*'
+from __future__ import annotations
+
+import argparse
+import logging
+import sys
+import traceback
+from pathlib import Path
+
+log = logging.getLogger("gpt_paper_renamer")
+
+LOG_FILE = Path(__file__).resolve().with_name("app.log")
 
 
-class Paper(BaseModel):
-    title: str
-    author: str
+def _configure_logging(level: str = "INFO") -> None:
+    """Always log to app.log (works even under pythonw.exe where stderr is None)."""
+    root = logging.getLogger()
+    root.setLevel(getattr(logging, level.upper(), logging.INFO))
+    fmt = logging.Formatter(
+        "%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    # Remove any previous handlers (in case of re-init).
+    for h in list(root.handlers):
+        root.removeHandler(h)
+    fh = logging.FileHandler(LOG_FILE, mode="a", encoding="utf-8")
+    fh.setFormatter(fmt)
+    root.addHandler(fh)
+    if sys.stderr is not None:
+        ch = logging.StreamHandler(sys.stderr)
+        ch.setFormatter(fmt)
+        root.addHandler(ch)
 
 
-class PDFHandler(FileSystemEventHandler):
-    def __init__(self, config):
-        self.config = config
-        self.api_key = config["api_key"]
-        self.client = OpenAI(api_key=self.api_key)
-        self.prompt = config["prompt"]
-        super().__init__()
-        self.processed_files = set()
-        self.current_filepath = None
+def _show_error_dialog(title: str, message: str) -> None:
+    """Best-effort GUI error for pythonw.exe where console output is invisible."""
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
 
-    def on_moved(self, event):
-        if (
-            not event.is_directory
-            and event.src_path.lower().endswith(".pdf.crdownload")
-            and event.dest_path.lower().endswith(".pdf")
-        ):
-            print(f"File Moved: {event}")
-            time.sleep(1)
-            if os.path.exists(event.dest_path):
-                self.process_pdf_with_llm(event.dest_path)
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror(title, message)
+        root.destroy()
+    except Exception:
+        pass
 
-    def on_created(self, event):
-        if not event.is_directory and event.src_path.lower().endswith(".pdf"):
-            print(f"File Created: {event}")
-            time.sleep(1)
-            if os.path.exists(event.src_path):
-                self.process_pdf_with_llm(event.src_path)
 
-    def encode_image(self, image_path):
-        with open(image_path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode("utf-8")
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="paper-renamer")
+    parser.add_argument("-c", "--config", type=Path, default=Path("config.yaml"))
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run without the tray icon (useful for debugging or servers).",
+    )
+    args = parser.parse_args(argv)
 
-    def process_pdf_with_llm(self, file_path):
-        if file_path in self.processed_files:
-            print(f"Already processed: {file_path}")
-            return
+    _configure_logging("INFO")
+    log.info("--- startup ---")
+
+    from src.config import load_config
+    from src.confirm import ask_yes_no
+    from src.extractor import MetadataExtractor
+    from src.handler import PDFEventHandler, PDFRenameWorker
+    from src.tray import Tray
+    from watchdog.observers import Observer
+
+    try:
+        config = load_config(args.config)
+    except Exception as e:
+        log.exception("Failed to load config from %s", args.config)
+        _show_error_dialog(
+            "GPT Paper Renamer — config error",
+            f"Could not load {args.config}:\n\n{e}\n\nSee app.log for details.",
+        )
+        return 1
+
+    logging.getLogger().setLevel(getattr(logging, config.log_level.upper(), logging.INFO))
+
+    extractor = MetadataExtractor(
+        api_key=config.api_key,
+        model=config.model,
+        prompt=config.prompt,
+        timeout=config.request_timeout,
+        max_retries=config.max_retries,
+    )
+    worker = PDFRenameWorker(config, extractor)
+    worker.set_confirm(ask_yes_no)
+    worker.start()
+
+    observer = Observer()
+    observer.schedule(
+        PDFEventHandler(worker, debounce=config.debounce_seconds),
+        path=str(config.watch_folder),
+        recursive=config.recursive,
+    )
+    observer.start()
+
+    log.info("Watching %s (model=%s)", config.watch_folder, config.model)
+
+    def shutdown() -> None:
+        log.info("Shutting down...")
+        observer.stop()
+        observer.join()
+        worker.stop()
+        worker.join(timeout=5)
+
+    if args.headless:
+        _run_headless(shutdown)
+        return 0
+
+    tray = Tray(
+        watch_folder=config.watch_folder,
+        on_pause_changed=lambda paused: setattr(worker, "paused", paused),
+        on_quit=shutdown,
+        is_paused=lambda: worker.paused,
+        on_confirm_changed=lambda v: setattr(worker, "require_confirmation", v),
+        is_confirm=lambda: worker.require_confirmation,
+        log_path=LOG_FILE,
+    )
+    worker.set_notifier(tray.notify)
+    tray.notify("GPT Paper Renamer", f"Watching {config.watch_folder.name}")
+
+    # pystray must run on the main thread (required on macOS).
+    try:
+        tray.run()
+    except KeyboardInterrupt:
+        shutdown()
+    return 0
+
+
+def _run_headless(shutdown) -> None:
+    import signal
+    import threading
+
+    stop = threading.Event()
+    for sig in (signal.SIGINT, signal.SIGTERM):
         try:
-            self.current_filepath = file_path
-            toast(
-                "GPT Paper Renamer",
-                f"Detecting new download {file_path}. Rename?",
-                buttons=["Yes"],
-                on_click=self._process_pdf_with_llm,
-            )
-        except Exception as e:
-            print(f"Error processing {file_path}: {str(e)}")
-
-    def _process_pdf_with_llm(self, response):
-        file_path = self.current_filepath
-        dirname, filenameext = os.path.split(file_path)
-        filename, ext = os.path.splitext(filenameext)
-
-        with open(file_path, "rb") as f:
-            pdf_bytes = f.read()
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            images = pdf2image.convert_from_bytes(pdf_bytes)
-            image = images[0]
-            page_path = os.path.join(tmp_dir, "frontpage.png")
-            image.save(page_path, "PNG")
-            base64_image = self.encode_image(page_path)
-
-        try:
-            notify(
-                title="GPT Paper Renamer",
-                progress={
-                    "title": filenameext,
-                    "status": "Analyzing PDF File...",
-                    "value": 1 / 2,
-                    "valueStringOverride": "Step 1 / 2",
-                },
-            )
-            response = self.client.beta.chat.completions.parse(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": self.prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/png;base64,{base64_image}"
-                                },
-                            },
-                        ],
-                    },
-                ],
-                response_format=Paper,
-            )
-            response = response.choices[0].message.content.strip()
-            parsed = json.loads(response)
-            title = parsed.get("title", "Unknown")
-            author = parsed.get("author", "Unknown")
-
-            safe_title = self.make_filename_safe(title)
-            safe_author = self.make_filename_safe(author)
-            new_name = (
-                f"{safe_title}_({filename})_{safe_author}{ext}"
-                if safe_title and safe_author
-                else f"{filename}{ext}"
-            )
-
-            if self.rename_file(file_path, new_name):
-                update_progress(
-                    {
-                        "title": new_name,
-                        "value": 2 / 2,
-                        "status": "Renaming file...",
-                        "valueStringOverride": "Step 2 / 2",
-                    }
-                )
-            else:
-                print("Duplicate name")
-                update_progress(
-                    {
-                        "title": filenameext,
-                        "value": 2 / 2,
-                        "status": "Duplicate name",
-                        "valueStringOverride": "Step 2 / 2",
-                    }
-                )
-
-        except Exception as e:
-            print(f"Error processing {file_path}: {str(e)}")
-
-    def make_filename_safe(self, name):
-        for char in INVALID_CHARS:
-            name = name.replace(char, "_")
-        return name.strip()
-
-    def rename_file(self, old_path, new_name):
-        directory = os.path.dirname(old_path)
-        new_path = os.path.join(directory, new_name)
-        if os.path.exists(new_path):
-            return False
-        else:
-            os.rename(old_path, new_path)
-            print(f"Renamed: {old_path} -> {new_path}")
-            self.processed_files.add(new_path)
-            return True
-
-
-def load_config():
-    with open("config.yaml") as f:
-        return yaml.safe_load(f)
+            signal.signal(sig, lambda *_: stop.set())
+        except (ValueError, AttributeError):
+            pass
+    try:
+        stop.wait()
+    finally:
+        shutdown()
 
 
 if __name__ == "__main__":
-    config = load_config()
-    notify("GPT Paper Renamer", "GPT Paper Renamer is running...")
-    files = os.listdir(config["watch_folder"])
-    print(len(files))
-    event_handler = PDFHandler(config)
-    observer = Observer()
-    observer.schedule(event_handler, path=config["watch_folder"], recursive=False)
-    observer.start()
-
     try:
-        print(f"Monitoring {config['watch_folder']} for papers...")
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        observer.stop()
-    observer.join()
-    #
-    # at exit, notify user
-    # register the exit function
-
-    atexit.register(lambda: notify("GPT Paper Renamer", "GPT Paper Renamer is stopped"))
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except BaseException as e:
+        # Last-resort catch so pythonw.exe doesn't swallow the error silently.
+        tb = traceback.format_exc()
+        try:
+            _configure_logging("INFO")
+            log.critical("Unhandled exception:\n%s", tb)
+        except Exception:
+            pass
+        _show_error_dialog(
+            "GPT Paper Renamer — crash",
+            f"{type(e).__name__}: {e}\n\nFull traceback in app.log.",
+        )
+        sys.exit(1)
