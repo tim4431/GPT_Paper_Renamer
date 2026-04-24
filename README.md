@@ -2,24 +2,25 @@
 
 Watches a folder and renames new academic PDFs based on the title/author that an OpenAI model extracts from the first page. Cross-platform tray app (Windows + macOS).
 
-![application example](docs/application_example.png)
-
 ## Install & run
 
-Requires Python 3.10+ on your `PATH` to create a virtual environment.
+Requires Python 3.10+ on your `PATH`.
 
 | OS | Step |
 |---|---|
 | **Windows** | Double-click `run_app.bat` |
-| **macOS** | Open Terminal in this folder and run the one-liner below, then double-click `run_app.command` from then on |
-
-**macOS first-run (bypasses Gatekeeper quarantine on ZIP downloads):**
-```bash
-xattr -cr . && chmod +x run_app.command && ./run_app.command
-```
-If you `git clone`d instead of downloading a ZIP, just the `chmod +x` half is needed.
+| **macOS** | `chmod +x run_app.command` once, then double-click it |
 
 On first launch the script creates a local `.venv/`, installs dependencies, runs a short CLI wizard (API key · watch folder · filename format · ask-before-rename), and starts the tray icon.
+
+Terminal usage (macOS):
+
+```bash
+cd /path/to/GPT_Paper_Renamer-main
+./run_app.command
+./run_app.command --headless
+./run_app.command --help
+```
 
 ## Tray menu
 
@@ -27,11 +28,10 @@ On first launch the script creates a local `.venv/`, installs dependencies, runs
 |---|---|
 | Watching: *folder* | info only |
 | **Pause / Resume** | stop/start reacting to new files |
-| **Ask before rename** | toggle Rename/Cancel prompt before each rename (persisted to `config.yaml`) |
+| **Ask before rename** | toggle the Yes/No dialog before each rename (persisted to `config.yaml`) |
 | **Start at login** | toggle autostart (Windows registry / macOS LaunchAgent) |
 | Open watch folder | reveal in Explorer/Finder |
 | View log | open `app.log` |
-| **Settings...** | open the CLI wizard in a new terminal (change key, folder, format, re-install .venv) |
 | Quit | clean shutdown |
 
 Green icon = active · grey = paused.
@@ -50,12 +50,9 @@ All settings live in [config.yaml](config.yaml) (written by the wizard, re-writt
 
 | Need | Do |
 |---|---|
-| Change one answer | tray → **Settings...**, pick an option in the menu |
-| Force a fresh config | delete `config.yaml`, relaunch |
-| Re-install dependencies | tray → **Settings...** → **Re-install .venv**, then quit & relaunch |
+| Change an answer | `python -m src.wizard` (pre-fills current values) |
+| Fresh config | delete `config.yaml`, relaunch |
 | Full clean install | delete `.venv/` and `config.yaml`, relaunch |
-
-The wizard shows current values and asks **y/N** before editing each setting, so it's safe to browse without changing anything.
 
 ## Headless
 
@@ -68,24 +65,24 @@ No tray; Ctrl-C to stop.
 ## Layout
 
 ```
-app.py              # entry point (runs tray on main thread)
+app.py                # entry point (runs tray on main thread)
 src/
-  config.py         # pydantic config + documented-YAML writer
-  wizard.py         # first-run CLI wizard
-  extractor.py      # OpenAI structured-output client
-  handler.py        # watchdog + background worker
-  tray.py           # pystray icon + menu
-  confirm.py        # Rename/Cancel dialog (toast + Tk fallback)
-  files.py          # PDF helpers + filename sanitizer + rename
-  system.py         # app identity + autostart (Windows reg / macOS LaunchAgent)
-config.yaml         # your config (git-ignored, fully documented)
-run_app.bat         # Windows launcher (bootstraps .venv + wizard)
-run_app.command     # macOS launcher
+  config.py           # pydantic config + YAML writer
+  wizard.py           # first-run CLI wizard
+  extractor.py        # OpenAI structured-output client
+  handler.py          # watchdog + background worker
+  tray.py             # pystray icon + menu
+  confirm.py          # cross-platform Yes/No dialog
+  autostart.py        # Windows registry / macOS LaunchAgent
+  pdf.py              # PyMuPDF helpers
+  renamer.py          # filename sanitizer + rename
+config.yaml           # your config (git-ignored, fully documented)
+run_app.bat           # Windows launcher (bootstraps .venv + wizard)
+run_app.command       # macOS launcher
 ```
 
 ## Troubleshooting
 
 - **Tray doesn't appear after first setup** → check `app.log` in the project folder; a Tk error dialog should also pop up with the traceback.
 - **`.venv` creation fails with "path not found"** → your `python` is MSYS2 or the Windows Store stub. Install real Python from [python.org](https://www.python.org/downloads/) and tick *Add to PATH*. The launcher auto-detects Anaconda/Miniconda if present.
-- **macOS: *"Apple could not verify run_app.command is free of malware"*** → Gatekeeper quarantined the file because it came from a ZIP download. In Terminal: `xattr -cr . && chmod +x run_app.command`, then double-click works. Or: click Done, open *System Settings → Privacy & Security*, scroll down, click **Open Anyway**.
 - **macOS menu bar icon missing** → focus Terminal once, or bundle with `pyinstaller --windowed app.py`.

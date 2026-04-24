@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # macOS launcher: bootstraps .venv, runs the CLI wizard on first run,
-# then launches the tray app.
+# then launches the app and forwards CLI args to app.py.
 # One-time: chmod +x run_app.command
 set -e
 cd "$(dirname "$0")"
 
-# Wizard's 'Re-install .venv' option drops this sentinel. Honor it.
-if [ -f ".reinstall_venv" ]; then
-    echo "Re-install requested by wizard. Wiping .venv ..."
-    rm -f ".reinstall_venv"
-    rm -rf ".venv"
+if [ "${1:-}" = "--launcher-help" ]; then
+    echo "Usage: ./run_app.command [app.py args]"
+    echo
+    echo "Examples:"
+    echo "  ./run_app.command"
+    echo "  ./run_app.command --headless"
+    echo "  ./run_app.command --config config.yaml"
+    exit 0
 fi
 
 if [ ! -x ".venv/bin/python3" ]; then
@@ -26,9 +29,9 @@ if [ ! -x ".venv/bin/python3" ]; then
     echo "Setup complete."
 fi
 
-if [ ! -f "config.yaml" ]; then
+if [ ! -f "config.yaml" ] && [ "${1:-}" != "--help" ]; then
     echo
     .venv/bin/python3 -m src.wizard
 fi
 
-exec .venv/bin/python3 app.py
+exec .venv/bin/python3 app.py "$@"
