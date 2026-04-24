@@ -13,7 +13,7 @@ from typing import Optional
 
 import yaml
 
-from .config import DEFAULT_PROMPT
+from .config import DEFAULT_PROMPT, write_config
 
 FORMAT_PRESETS: list[tuple[str, str]] = [
     ("Title (original) Author", "{title}_({original})_{author}"),
@@ -159,8 +159,7 @@ def run(config_path: Path) -> bool:
     else:
         data.pop("api_key", None)  # keep file clean; env var will be used
 
-    with config_path.open("w", encoding="utf-8") as f:
-        yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
+    write_config(config_path, data)
 
     print()
     print(f"Saved {config_path}")

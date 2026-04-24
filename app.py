@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import traceback
 from pathlib import Path
 
 log = logging.getLogger("gpt_paper_renamer")
 
-LOG_FILE = Path(__file__).resolve().with_name("app.log")
+APP_DIR = Path(__file__).resolve().parent
+LOG_FILE = APP_DIR / "app.log"
 
 
 def _configure_logging(level: str = "INFO") -> None:
@@ -21,7 +23,6 @@ def _configure_logging(level: str = "INFO") -> None:
         "%(asctime)s %(levelname)-7s %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-    # Remove any previous handlers (in case of re-init).
     for h in list(root.handlers):
         root.removeHandler(h)
     fh = logging.FileHandler(LOG_FILE, mode="a", encoding="utf-8")
@@ -48,6 +49,10 @@ def _show_error_dialog(title: str, message: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Anchor cwd to the app folder so relative paths (config.yaml) and
+    # autostart-launched invocations always resolve correctly.
+    os.chdir(APP_DIR)
+
     parser = argparse.ArgumentParser(prog="paper-renamer")
     parser.add_argument("-c", "--config", type=Path, default=Path("config.yaml"))
     parser.add_argument(
@@ -60,12 +65,16 @@ def main(argv: list[str] | None = None) -> int:
     _configure_logging("INFO")
     log.info("--- startup ---")
 
-    from src.config import load_config
+    from src import autostart
+    from src.config import load_config, update_yaml
     from src.confirm import ask_yes_no
     from src.extractor import MetadataExtractor
     from src.handler import PDFEventHandler, PDFRenameWorker
     from src.tray import Tray
     from watchdog.observers import Observer
+
+    # Self-heal a stale autostart entry after the user moves the project.
+    autostart.refresh_if_enabled()
 
     try:
         config = load_config(args.config)
@@ -111,17 +120,32 @@ def main(argv: list[str] | None = None) -> int:
         _run_headless(shutdown)
         return 0
 
+    # Persist tray toggles back into config.yaml so they survive restarts.
+    def _set_confirmation(value: bool) -> None:
+        worker.require_confirmation = value
+        update_yaml(args.config, require_confirmation=value)
+
+    # Autostart is a system-level setting, not a config.yaml setting — it
+    # lives in the registry / LaunchAgent. But expose it the same way.
+    autostart_supported = autostart.is_supported()
+    startup_message = (
+        f"Watching {config.watch_folder.name}"
+        + (" • ask-before-rename ON" if config.require_confirmation else "")
+    )
+
     tray = Tray(
         watch_folder=config.watch_folder,
         on_pause_changed=lambda paused: setattr(worker, "paused", paused),
         on_quit=shutdown,
         is_paused=lambda: worker.paused,
-        on_confirm_changed=lambda v: setattr(worker, "require_confirmation", v),
+        on_confirm_changed=_set_confirmation,
         is_confirm=lambda: worker.require_confirmation,
+        on_autostart_changed=(autostart.set_enabled if autostart_supported else None),
+        is_autostart=(autostart.is_enabled if autostart_supported else None),
         log_path=LOG_FILE,
+        startup_message=startup_message,
     )
     worker.set_notifier(tray.notify)
-    tray.notify("GPT Paper Renamer", f"Watching {config.watch_folder.name}")
 
     # pystray must run on the main thread (required on macOS).
     try:
@@ -153,7 +177,6 @@ if __name__ == "__main__":
     except SystemExit:
         raise
     except BaseException as e:
-        # Last-resort catch so pythonw.exe doesn't swallow the error silently.
         tb = traceback.format_exc()
         try:
             _configure_logging("INFO")
