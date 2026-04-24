@@ -11,7 +11,13 @@ Requires Python 3.10+ on your `PATH` to create a virtual environment.
 | OS | Step |
 |---|---|
 | **Windows** | Double-click `run_app.bat` |
-| **macOS** | `chmod +x run_app.command` once, then double-click it |
+| **macOS** | Open Terminal in this folder and run the one-liner below, then double-click `run_app.command` from then on |
+
+**macOS first-run (bypasses Gatekeeper quarantine on ZIP downloads):**
+```bash
+xattr -cr . && chmod +x run_app.command && ./run_app.command
+```
+If you `git clone`d instead of downloading a ZIP, just the `chmod +x` half is needed.
 
 On first launch the script creates a local `.venv/`, installs dependencies, runs a short CLI wizard (API key · watch folder · filename format · ask-before-rename), and starts the tray icon.
 
@@ -81,4 +87,5 @@ run_app.command     # macOS launcher
 
 - **Tray doesn't appear after first setup** → check `app.log` in the project folder; a Tk error dialog should also pop up with the traceback.
 - **`.venv` creation fails with "path not found"** → your `python` is MSYS2 or the Windows Store stub. Install real Python from [python.org](https://www.python.org/downloads/) and tick *Add to PATH*. The launcher auto-detects Anaconda/Miniconda if present.
+- **macOS: *"Apple could not verify run_app.command is free of malware"*** → Gatekeeper quarantined the file because it came from a ZIP download. In Terminal: `xattr -cr . && chmod +x run_app.command`, then double-click works. Or: click Done, open *System Settings → Privacy & Security*, scroll down, click **Open Anyway**.
 - **macOS menu bar icon missing** → focus Terminal once, or bundle with `pyinstaller --windowed app.py`.

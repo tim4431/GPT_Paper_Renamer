@@ -11,6 +11,8 @@ dist/
 .venv/
 venv/
 
-# Logs / test fixtures
+# Runtime state
 *.log
+.app.lock
+.reinstall_venv
 /test

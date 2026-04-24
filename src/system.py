@@ -15,6 +15,7 @@ operating system so it behaves like a real desktop app":
 from __future__ import annotations
 
 import logging
+import os
 import shlex
 import subprocess
 import sys
@@ -43,6 +44,112 @@ def _launch_argv() -> list[str]:
     else:
         python = root / ".venv" / "bin" / "python3"
     return [str(python), str(root / "app.py")]
+
+
+# === Single-instance lock ===================================================
+
+_LOCK_NAME = ".app.lock"
+
+
+def _lock_path() -> Path:
+    return _project_root() / _LOCK_NAME
+
+
+def _is_pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            STILL_ACTIVE = 259
+            handle = ctypes.windll.kernel32.OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+            )
+            if not handle:
+                return False
+            exit_code = ctypes.c_ulong()
+            ok = ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return bool(ok) and exit_code.value == STILL_ACTIVE
+        except Exception:
+            return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except (ProcessLookupError, PermissionError):
+        return False
+
+
+def acquire_lock() -> bool:
+    """Try to acquire a single-instance lock. Returns True if acquired."""
+    lock = _lock_path()
+    if lock.exists():
+        try:
+            old_pid = int(lock.read_text(encoding="utf-8").strip())
+            if _is_pid_alive(old_pid):
+                log.info("Lock held by running pid %d; not starting.", old_pid)
+                return False
+            log.info("Stale lock from dead pid %d; replacing.", old_pid)
+        except (ValueError, OSError):
+            log.warning("Unreadable lock file; replacing.")
+        try:
+            lock.unlink()
+        except OSError:
+            log.exception("Could not remove stale lock file")
+            return False
+    try:
+        lock.write_text(str(os.getpid()), encoding="utf-8")
+        return True
+    except OSError:
+        log.exception("Could not write lock file %s", lock)
+        return False
+
+
+def release_lock() -> None:
+    """Remove the lock file if it still belongs to this process."""
+    lock = _lock_path()
+    try:
+        if lock.exists() and lock.read_text(encoding="utf-8").strip() == str(os.getpid()):
+            lock.unlink()
+    except OSError:
+        log.exception("Failed to release lock %s", lock)
+
+
+def notify_already_running() -> None:
+    """Tell the user the app is already running (toast on Windows, Tk otherwise)."""
+    message = "GPT Paper Renamer is already running.\nCheck your system tray / menu bar."
+    log.info(message.replace("\n", " "))
+    if sys.platform == "win32":
+        try:
+            from win11toast import toast
+
+            toast(
+                "GPT Paper Renamer",
+                message,
+                app_id=APP_ID,
+                duration="short",
+            )
+            return
+        except Exception:
+            log.exception("win11toast failed; falling back to Tk")
+    # Cross-platform fallback.
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            root.attributes("-topmost", True)
+        except Exception:
+            pass
+        messagebox.showinfo("GPT Paper Renamer", message)
+        root.destroy()
+    except Exception:
+        log.exception("Tk fallback failed; printing to stderr")
+        print(message, file=sys.stderr)
 
 
 # === App identity (Windows AUMID) ==========================================

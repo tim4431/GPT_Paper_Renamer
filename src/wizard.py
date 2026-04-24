@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -287,8 +288,12 @@ def _menu_loop(config_path: Path) -> bool:
     return True
 
 
-def _guided_setup(config_path: Path) -> bool:
-    """The original sequential flow, used on first run and via menu option 5."""
+def _guided_setup(config_path: Path, *, first_run: bool = False) -> bool:
+    """The original sequential flow, used on first run and via menu option 5.
+
+    When *first_run* is True, shows a 3-second closing countdown after
+    saving so the user sees "setup done" before the launcher starts the app.
+    """
     existing = _load_existing(config_path)
     env_key = os.environ.get("OPENAI_API_KEY", "").strip()
 
@@ -341,6 +346,14 @@ def _guided_setup(config_path: Path) -> bool:
     print()
     print(f"Saved {config_path}")
     print(f"Preview filename: {_preview(template)}")
+
+    if first_run:
+        print()
+        print("Setup complete! The app will start in a moment.")
+        for i in range(3, 0, -1):
+            print(f"  Closing in {i}... ", end="\r", flush=True)
+            time.sleep(1)
+        print("  Starting GPT Paper Renamer...")
     return True
 
 
@@ -389,7 +402,7 @@ def run(config_path: Path) -> bool:
     _force_utf8()
     if not config_path.exists():
         print("No config.yaml yet - running first-time setup.\n")
-        return _guided_setup(config_path)
+        return _guided_setup(config_path, first_run=True)
     return _menu_loop(config_path)
 
 

@@ -76,87 +76,94 @@ def main(argv: list[str] | None = None) -> int:
     # Windows: register the AppUserModelID so toasts show "GPT Paper Renamer".
     system.configure_app_id()
 
-    # Self-heal a stale autostart entry after the user moves the project.
-    system.refresh_autostart()
-
-    try:
-        config = load_config(args.config)
-    except Exception as e:
-        log.exception("Failed to load config from %s", args.config)
-        _show_error_dialog(
-            "GPT Paper Renamer — config error",
-            f"Could not load {args.config}:\n\n{e}\n\nSee app.log for details.",
-        )
-        return 1
-
-    logging.getLogger().setLevel(getattr(logging, config.log_level.upper(), logging.INFO))
-
-    extractor = MetadataExtractor(
-        api_key=config.api_key,
-        model=config.model,
-        prompt=config.prompt,
-        timeout=config.request_timeout,
-        max_retries=config.max_retries,
-    )
-    worker = PDFRenameWorker(config, extractor)
-    worker.set_confirm(ask_yes_no)
-    worker.start()
-
-    observer = Observer()
-    observer.schedule(
-        PDFEventHandler(worker, debounce=config.debounce_seconds),
-        path=str(config.watch_folder),
-        recursive=config.recursive,
-    )
-    observer.start()
-
-    log.info("Watching %s (model=%s)", config.watch_folder, config.model)
-
-    def shutdown() -> None:
-        log.info("Shutting down...")
-        observer.stop()
-        observer.join()
-        worker.stop()
-        worker.join(timeout=5)
-
-    if args.headless:
-        _run_headless(shutdown)
+    # Single-instance guard — exits immediately if another copy is already
+    # running (checked via a PID lock file in the project folder).
+    if not system.acquire_lock():
+        system.notify_already_running()
         return 0
 
-    # Persist tray toggles back into config.yaml so they survive restarts.
-    def _set_confirmation(value: bool) -> None:
-        worker.require_confirmation = value
-        update_yaml(args.config, require_confirmation=value)
-
-    # Autostart is a system-level setting, not a config.yaml setting — it
-    # lives in the registry / LaunchAgent. But expose it the same way.
-    autostart_supported = system.autostart_supported()
-    startup_message = (
-        f"Watching {config.watch_folder.name}"
-        + (" • ask-before-rename ON" if config.require_confirmation else "")
-    )
-
-    tray = Tray(
-        watch_folder=config.watch_folder,
-        on_pause_changed=lambda paused: setattr(worker, "paused", paused),
-        on_quit=shutdown,
-        is_paused=lambda: worker.paused,
-        on_confirm_changed=_set_confirmation,
-        is_confirm=lambda: worker.require_confirmation,
-        on_autostart_changed=(system.set_autostart if autostart_supported else None),
-        is_autostart=(system.autostart_enabled if autostart_supported else None),
-        on_settings=system.open_settings,
-        log_path=LOG_FILE,
-        startup_message=startup_message,
-    )
-    worker.set_notifier(tray.notify)
-
-    # pystray must run on the main thread (required on macOS).
     try:
-        tray.run()
-    except KeyboardInterrupt:
-        shutdown()
-    return 0
+        # Self-heal a stale autostart entry after the user moves the project.
+        system.refresh_autostart()
+
+        try:
+            config = load_config(args.config)
+        except Exception as e:
+            log.exception("Failed to load config from %s", args.config)
+            _show_error_dialog(
+                "GPT Paper Renamer — config error",
+                f"Could not load {args.config}:\n\n{e}\n\nSee app.log for details.",
+            )
+            return 1
+
+        logging.getLogger().setLevel(getattr(logging, config.log_level.upper(), logging.INFO))
+
+        extractor = MetadataExtractor(
+            api_key=config.api_key,
+            model=config.model,
+            prompt=config.prompt,
+            timeout=config.request_timeout,
+            max_retries=config.max_retries,
+        )
+        worker = PDFRenameWorker(config, extractor)
+        worker.set_confirm(ask_yes_no)
+        worker.start()
+
+        observer = Observer()
+        observer.schedule(
+            PDFEventHandler(worker, debounce=config.debounce_seconds),
+            path=str(config.watch_folder),
+            recursive=config.recursive,
+        )
+        observer.start()
+
+        log.info("Watching %s (model=%s)", config.watch_folder, config.model)
+
+        def shutdown() -> None:
+            log.info("Shutting down...")
+            observer.stop()
+            observer.join()
+            worker.stop()
+            worker.join(timeout=5)
+
+        if args.headless:
+            _run_headless(shutdown)
+            return 0
+
+        # Persist tray toggles back into config.yaml so they survive restarts.
+        def _set_confirmation(value: bool) -> None:
+            worker.require_confirmation = value
+            update_yaml(args.config, require_confirmation=value)
+
+        autostart_supported = system.autostart_supported()
+        startup_message = (
+            f"Watching {config.watch_folder.name}"
+            + (" • ask-before-rename ON" if config.require_confirmation else "")
+        )
+
+        tray = Tray(
+            watch_folder=config.watch_folder,
+            on_pause_changed=lambda paused: setattr(worker, "paused", paused),
+            on_quit=shutdown,
+            is_paused=lambda: worker.paused,
+            on_confirm_changed=_set_confirmation,
+            is_confirm=lambda: worker.require_confirmation,
+            on_autostart_changed=(system.set_autostart if autostart_supported else None),
+            is_autostart=(system.autostart_enabled if autostart_supported else None),
+            on_settings=system.open_settings,
+            log_path=LOG_FILE,
+            startup_message=startup_message,
+        )
+        worker.set_notifier(tray.notify)
+
+        # pystray must run on the main thread (required on macOS).
+        try:
+            tray.run()
+        except KeyboardInterrupt:
+            shutdown()
+        return 0
+    finally:
+        system.release_lock()
 
 
 def _run_headless(shutdown) -> None:
