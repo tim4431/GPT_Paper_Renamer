@@ -1,4 +1,4 @@
-"""File-level helpers: PDF validation/rendering and safe renaming."""
+"""Pure-function helpers for producing safe, unique target filenames."""
 
 from __future__ import annotations
 
@@ -6,39 +6,7 @@ import logging
 import re
 from pathlib import Path
 
-import pymupdf
-
 log = logging.getLogger(__name__)
-
-
-# --- PDF --------------------------------------------------------------------
-
-_PDF_MAGIC = b"%PDF-"
-
-
-def is_valid_pdf(path: Path) -> bool:
-    """Return True if *path* looks like a complete PDF file on disk."""
-    try:
-        if path.stat().st_size < 1024:
-            return False
-        with path.open("rb") as f:
-            return f.read(5) == _PDF_MAGIC
-    except OSError:
-        return False
-
-
-def render_first_page(pdf_path: Path, out_path: Path, *, dpi: int = 150) -> Path:
-    """Render the first page of *pdf_path* as a PNG at *out_path*."""
-    with pymupdf.open(pdf_path) as doc:
-        if doc.page_count == 0:
-            raise ValueError(f"PDF has no pages: {pdf_path}")
-        page = doc.load_page(0)
-        pixmap = page.get_pixmap(dpi=dpi, alpha=False)
-        pixmap.save(out_path)
-    return out_path
-
-
-# --- Rename -----------------------------------------------------------------
 
 _INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _COLLAPSE_WHITESPACE = re.compile(r"\s+")
@@ -83,7 +51,7 @@ def unique_path(directory: Path, base: str, ext: str) -> Path:
 
 
 def rename(old_path: Path, new_name: str, *, overwrite: bool = False) -> Path:
-    """Rename *old_path* to *new_name* in the same directory; return new path."""
+    """Rename *old_path* to *new_name* in the same directory and return the new path."""
     directory = old_path.parent
     target = directory / new_name
     if target.exists() and not overwrite:

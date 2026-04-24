@@ -14,13 +14,8 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 
 from .config import Config
 from .extractor import MetadataExtractor, Paper
-from .files import (
-    format_filename,
-    is_valid_pdf,
-    rename,
-    render_first_page,
-    unique_path,
-)
+from .pdf import is_valid_pdf, render_first_page
+from .renamer import format_filename, rename, unique_path
 
 log = logging.getLogger(__name__)
 
