@@ -65,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     _configure_logging("INFO")
     log.info("--- startup ---")
 
-    from src import autostart, winapp
+    from src import system
     from src.config import load_config, update_yaml
     from src.confirm import ask_yes_no
     from src.extractor import MetadataExtractor
@@ -74,10 +74,10 @@ def main(argv: list[str] | None = None) -> int:
     from watchdog.observers import Observer
 
     # Windows: register the AppUserModelID so toasts show "GPT Paper Renamer".
-    winapp.configure()
+    system.configure_app_id()
 
     # Self-heal a stale autostart entry after the user moves the project.
-    autostart.refresh_if_enabled()
+    system.refresh_autostart()
 
     try:
         config = load_config(args.config)
@@ -130,7 +130,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Autostart is a system-level setting, not a config.yaml setting — it
     # lives in the registry / LaunchAgent. But expose it the same way.
-    autostart_supported = autostart.is_supported()
+    autostart_supported = system.autostart_supported()
     startup_message = (
         f"Watching {config.watch_folder.name}"
         + (" • ask-before-rename ON" if config.require_confirmation else "")
@@ -143,8 +143,8 @@ def main(argv: list[str] | None = None) -> int:
         is_paused=lambda: worker.paused,
         on_confirm_changed=_set_confirmation,
         is_confirm=lambda: worker.require_confirmation,
-        on_autostart_changed=(autostart.set_enabled if autostart_supported else None),
-        is_autostart=(autostart.is_enabled if autostart_supported else None),
+        on_autostart_changed=(system.set_autostart if autostart_supported else None),
+        is_autostart=(system.autostart_enabled if autostart_supported else None),
         log_path=LOG_FILE,
         startup_message=startup_message,
     )

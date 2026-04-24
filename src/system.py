@@ -1,7 +1,15 @@
-"""Cross-platform autostart: register the tray app to launch at user login.
+"""OS-level integration: app identity (for toast notifications) and autostart.
 
-Windows: writes ``HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run``.
-macOS: drops a LaunchAgent plist in ``~/Library/LaunchAgents``.
+Two concerns live together here because both are "register this app with the
+operating system so it behaves like a real desktop app":
+
+1. **App identity** (``configure_app_id``) — on Windows, sets an
+   AppUserModelID so toast notifications show "GPT Paper Renamer" rather
+   than "Python". No-op on macOS.
+
+2. **Autostart** (``autostart_enabled`` / ``set_autostart`` / ``refresh_autostart``)
+   — Windows: ``HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run``;
+   macOS: a LaunchAgent plist in ``~/Library/LaunchAgents``.
 """
 
 from __future__ import annotations
@@ -10,11 +18,15 @@ import logging
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 log = logging.getLogger(__name__)
 
-APP_NAME = "GPTPaperRenamer"
-APP_LABEL = "com.user.gptpaperrenamer"
+# Identifier used for both the Windows AUMID and the Run-key value name.
+APP_ID = "GPTPaperRenamer"
+DISPLAY_NAME = "GPT Paper Renamer"
+# Reverse-DNS label used for the macOS LaunchAgent plist.
+LAUNCH_AGENT_LABEL = "com.user.gptpaperrenamer"
 
 
 def _project_root() -> Path:
@@ -23,7 +35,7 @@ def _project_root() -> Path:
 
 
 def _launch_argv() -> list[str]:
-    """Return the argv used for silent boot-time launch."""
+    """argv used for boot-time launch (pythonw/python3 + app.py, absolute)."""
     root = _project_root()
     if sys.platform == "win32":
         python = root / ".venv" / "Scripts" / "pythonw.exe"
@@ -32,13 +44,41 @@ def _launch_argv() -> list[str]:
     return [str(python), str(root / "app.py")]
 
 
-def is_supported() -> bool:
+# === App identity (Windows AUMID) ==========================================
+
+def configure_app_id() -> Optional[str]:
+    """Register the Windows AUMID so notifications show the app name.
+
+    Returns the AUMID on success, or None if not applicable / failed.
+    No-op on non-Windows platforms.
+    """
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        import winreg
+
+        key_path = rf"Software\Classes\AppUserModelId\{APP_ID}"
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, DISPLAY_NAME)
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+        log.info("AppUserModelID set to %s (%s)", APP_ID, DISPLAY_NAME)
+        return APP_ID
+    except Exception:
+        log.exception("Failed to set AppUserModelID")
+        return None
+
+
+# === Autostart ==============================================================
+
+def autostart_supported() -> bool:
     return sys.platform in ("win32", "darwin")
 
 
 # --- Windows (HKCU\...\Run) -------------------------------------------------
 
-def _win_open(write: bool):  # pragma: no cover — Windows only
+def _win_open_run_key(write: bool):  # pragma: no cover - Windows only
     import winreg
 
     access = winreg.KEY_ALL_ACCESS if write else winreg.KEY_READ
@@ -50,12 +90,12 @@ def _win_open(write: bool):  # pragma: no cover — Windows only
     )
 
 
-def _win_current_command() -> str | None:
+def _win_current_command() -> Optional[str]:
     import winreg
 
     try:
-        with _win_open(write=False) as key:
-            value, _ = winreg.QueryValueEx(key, APP_NAME)
+        with _win_open_run_key(write=False) as key:
+            value, _ = winreg.QueryValueEx(key, APP_ID)
             return str(value)
     except FileNotFoundError:
         return None
@@ -65,8 +105,8 @@ def _win_enable() -> None:
     import winreg
 
     cmd = subprocess.list2cmdline(_launch_argv())
-    with _win_open(write=True) as key:
-        winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, cmd)
+    with _win_open_run_key(write=True) as key:
+        winreg.SetValueEx(key, APP_ID, 0, winreg.REG_SZ, cmd)
     log.info("Autostart enabled (Windows): %s", cmd)
 
 
@@ -74,8 +114,8 @@ def _win_disable() -> None:
     import winreg
 
     try:
-        with _win_open(write=True) as key:
-            winreg.DeleteValue(key, APP_NAME)
+        with _win_open_run_key(write=True) as key:
+            winreg.DeleteValue(key, APP_ID)
         log.info("Autostart disabled (Windows)")
     except FileNotFoundError:
         pass
@@ -84,7 +124,7 @@ def _win_disable() -> None:
 # --- macOS (LaunchAgent) ----------------------------------------------------
 
 def _mac_plist_path() -> Path:
-    return Path.home() / "Library" / "LaunchAgents" / f"{APP_LABEL}.plist"
+    return Path.home() / "Library" / "LaunchAgents" / f"{LAUNCH_AGENT_LABEL}.plist"
 
 
 def _mac_render_plist() -> str:
@@ -95,7 +135,7 @@ def _mac_render_plist() -> str:
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>{APP_LABEL}</string>
+    <string>{LAUNCH_AGENT_LABEL}</string>
     <key>ProgramArguments</key>
     <array>
 {args_xml}
@@ -115,8 +155,6 @@ def _mac_enable() -> None:
     path = _mac_plist_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_mac_render_plist(), encoding="utf-8")
-    # Best-effort activation for the current session; the plist takes effect
-    # on next login regardless.
     try:
         subprocess.run(["launchctl", "load", str(path)], check=False, capture_output=True)
     except Exception:
@@ -135,9 +173,9 @@ def _mac_disable() -> None:
         log.info("Autostart disabled (macOS)")
 
 
-# --- Public API -------------------------------------------------------------
+# --- Public autostart API ---------------------------------------------------
 
-def is_enabled() -> bool:
+def autostart_enabled() -> bool:
     if sys.platform == "win32":
         return _win_current_command() is not None
     if sys.platform == "darwin":
@@ -145,8 +183,8 @@ def is_enabled() -> bool:
     return False
 
 
-def set_enabled(enabled: bool) -> None:
-    if not is_supported():
+def set_autostart(enabled: bool) -> None:
+    if not autostart_supported():
         raise NotImplementedError(f"Autostart not implemented for {sys.platform}")
     if sys.platform == "win32":
         _win_enable() if enabled else _win_disable()
@@ -154,10 +192,10 @@ def set_enabled(enabled: bool) -> None:
         _mac_enable() if enabled else _mac_disable()
 
 
-def refresh_if_enabled() -> None:
-    """Self-heal: if autostart is on but points at the wrong path (because the
-    user moved the project folder), rewrite it with the current path."""
-    if not is_supported() or not is_enabled():
+def refresh_autostart() -> None:
+    """Self-heal: if autostart is on but the stored path is stale (user moved
+    the project folder), rewrite it with the current path."""
+    if not autostart_supported() or not autostart_enabled():
         return
     try:
         if sys.platform == "win32":

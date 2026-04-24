@@ -58,20 +58,19 @@ No tray; Ctrl-C to stop.
 ## Layout
 
 ```
-app.py                # entry point (runs tray on main thread)
+app.py              # entry point (runs tray on main thread)
 src/
-  config.py           # pydantic config + YAML writer
-  wizard.py           # first-run CLI wizard
-  extractor.py        # OpenAI structured-output client
-  handler.py          # watchdog + background worker
-  tray.py             # pystray icon + menu
-  confirm.py          # cross-platform Yes/No dialog
-  autostart.py        # Windows registry / macOS LaunchAgent
-  pdf.py              # PyMuPDF helpers
-  renamer.py          # filename sanitizer + rename
-config.yaml           # your config (git-ignored, fully documented)
-run_app.bat           # Windows launcher (bootstraps .venv + wizard)
-run_app.command       # macOS launcher
+  config.py         # pydantic config + documented-YAML writer
+  wizard.py         # first-run CLI wizard
+  extractor.py      # OpenAI structured-output client
+  handler.py        # watchdog + background worker
+  tray.py           # pystray icon + menu
+  confirm.py        # Rename/Cancel dialog (toast + Tk fallback)
+  files.py          # PDF helpers + filename sanitizer + rename
+  system.py         # app identity + autostart (Windows reg / macOS LaunchAgent)
+config.yaml         # your config (git-ignored, fully documented)
+run_app.bat         # Windows launcher (bootstraps .venv + wizard)
+run_app.command     # macOS launcher
 ```
 
 ## Troubleshooting

@@ -23,7 +23,7 @@ def _ask_via_toast(title: str, message: str) -> Optional[bool]:
     """Windows-only toast with action buttons. Returns None if unavailable."""
     try:
         from win11toast import toast
-        from .winapp import APP_ID
+        from .system import APP_ID
     except ImportError:
         return None
     try:
