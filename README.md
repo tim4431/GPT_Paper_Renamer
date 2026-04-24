@@ -2,9 +2,11 @@
 
 Watches a folder and renames new academic PDFs based on the title/author that an OpenAI model extracts from the first page. Cross-platform tray app (Windows + macOS).
 
+![application example](docs/application_example.png)
+
 ## Install & run
 
-Requires Python 3.10+ on your `PATH`.
+Requires Python 3.10+ on your `PATH` to create a virtual environment.
 
 | OS | Step |
 |---|---|
