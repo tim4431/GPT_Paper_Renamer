@@ -77,6 +77,10 @@ class Tray:
         is_confirm: Optional[Callable[[], bool]] = None,
         on_autostart_changed: Optional[Callable[[bool], None]] = None,
         is_autostart: Optional[Callable[[], bool]] = None,
+        on_fetch_changed: Optional[Callable[[bool], None]] = None,
+        is_fetch: Optional[Callable[[], bool]] = None,
+        on_auto_rename_changed: Optional[Callable[[bool], None]] = None,
+        is_auto_rename: Optional[Callable[[], bool]] = None,
         on_settings: Optional[Callable[[], None]] = None,
         log_path: Optional[Path] = None,
         startup_message: Optional[str] = None,
@@ -89,6 +93,10 @@ class Tray:
         self._is_confirm = is_confirm
         self._on_autostart_changed = on_autostart_changed
         self._is_autostart = is_autostart
+        self._on_fetch_changed = on_fetch_changed
+        self._is_fetch = is_fetch
+        self._on_auto_rename_changed = on_auto_rename_changed
+        self._is_auto_rename = is_auto_rename
         self._on_settings = on_settings
         self._log_path = log_path
         self._startup_message = startup_message
@@ -114,6 +122,22 @@ class Tray:
                     "Ask before rename",
                     self._toggle_confirm,
                     checked=lambda _: bool(self._is_confirm()),
+                )
+            )
+        if self._is_fetch is not None and self._on_fetch_changed is not None:
+            items.append(
+                MenuItem(
+                    "Fetch from database",
+                    self._toggle_fetch,
+                    checked=lambda _: bool(self._is_fetch()),
+                )
+            )
+        if self._is_auto_rename is not None and self._on_auto_rename_changed is not None:
+            items.append(
+                MenuItem(
+                    "Auto-rename on match",
+                    self._toggle_auto_rename,
+                    checked=lambda _: bool(self._is_auto_rename()),
                 )
             )
         if self._is_autostart is not None and self._on_autostart_changed is not None:
@@ -145,6 +169,18 @@ class Tray:
         if self._on_confirm_changed is None or self._is_confirm is None:
             return
         self._on_confirm_changed(not self._is_confirm())
+        icon.update_menu()
+
+    def _toggle_fetch(self, icon: Icon, _item: MenuItem) -> None:
+        if self._on_fetch_changed is None or self._is_fetch is None:
+            return
+        self._on_fetch_changed(not self._is_fetch())
+        icon.update_menu()
+
+    def _toggle_auto_rename(self, icon: Icon, _item: MenuItem) -> None:
+        if self._on_auto_rename_changed is None or self._is_auto_rename is None:
+            return
+        self._on_auto_rename_changed(not self._is_auto_rename())
         icon.update_menu()
 
     def _toggle_autostart(self, icon: Icon, _item: MenuItem) -> None:

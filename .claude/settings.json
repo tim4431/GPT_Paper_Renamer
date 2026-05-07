@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr *)",
+      "Bash(xargs grep *)",
+      "Bash(python -m compileall -q src app.py)",
+      "Bash(rm -rf src/__pycache__ __pycache__)"
+    ]
+  }
+}

@@ -52,6 +52,8 @@ class PDFRenameWorker(threading.Thread):
         self._confirm: Confirm = _always_yes
         self.paused = False
         self.require_confirmation = config.require_confirmation
+        self.fetch_from_database = config.fetch_from_database
+        self.auto_rename_on_match = config.auto_rename_on_match
 
     # --- wiring --------------------------------------------------------------
     def set_notifier(self, notify: Notify) -> None:
@@ -92,7 +94,36 @@ class PDFRenameWorker(threading.Thread):
             log.debug("Skipping non-PDF or incomplete file: %s", path)
             return
 
-        if self.require_confirmation:
+        # 1. Try a cheap database lookup first (arXiv / Crossref). We do this
+        #    BEFORE the confirmation gate so we can skip the prompt when we
+        #    already have authoritative metadata (and so the "Fetched from X"
+        #    notification shows the user what we found).
+        paper: Optional[Paper] = None
+        source: Optional[str] = None
+        if self.fetch_from_database:
+            try:
+                from .lookup import try_lookup
+
+                result = try_lookup(path.stem)
+                if result is not None:
+                    paper, source = result
+                    log.info(
+                        "Fetched from %s: %r by %r", source, paper.title, paper.author
+                    )
+                    self._notify(
+                        f"Fetched from {source}",
+                        f"{paper.title}\nby {paper.author}",
+                    )
+            except Exception:
+                log.exception("Database lookup failed; falling back to GPT")
+                paper, source = None, None
+
+        # 2. Confirmation gate. A successful database match + auto_rename_on_match
+        #    skips the dialog (authoritative metadata, nothing to double-check).
+        needs_confirm = self.require_confirmation and not (
+            paper is not None and self.auto_rename_on_match
+        )
+        if needs_confirm:
             if not self._confirm(
                 "GPT Paper Renamer",
                 f"New PDF detected:\n\n{path.name}\n\nRename it?",
@@ -101,13 +132,16 @@ class PDFRenameWorker(threading.Thread):
                 self._notify("Skipped", path.name)
                 return
 
-        log.info("Analyzing %s", path.name)
-        try:
-            paper = self._extract_metadata(path)
-        except Exception:
-            log.exception("Extraction failed for %s", path)
-            self._notify("Extraction failed", path.name)
-            return
+        # 3. GPT fallback if the database had nothing.
+        if paper is None:
+            log.info("Analyzing %s with GPT", path.name)
+            try:
+                paper = self._extract_metadata(path)
+                source = "GPT"
+            except Exception:
+                log.exception("Extraction failed for %s", path)
+                self._notify("Extraction failed", path.name)
+                return
 
         new_name = (
             format_filename(
@@ -126,7 +160,10 @@ class PDFRenameWorker(threading.Thread):
         else:
             with self._seen_lock:
                 self._seen.add(renamed.resolve())
-            self._notify("Renamed", f"{path.name}\n→ {renamed.name}")
+            self._notify(
+                f"Renamed via {source}",
+                f"{path.name}\n→ {renamed.name}",
+            )
 
     def _extract_metadata(self, path: Path) -> Paper:
         with tempfile.TemporaryDirectory() as tmp:

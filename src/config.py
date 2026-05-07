@@ -70,8 +70,22 @@ max_retries: {max_retries}
 #   "{{original}}_{{title}}"
 filename_format: {filename_format}
 
-# Pop a Yes/No dialog before renaming each PDF. (tray)
+# Pop a Rename/Cancel dialog before renaming each PDF. (tray)
 require_confirmation: {require_confirmation}
+
+# --- Lookup -----------------------------------------------------------------
+
+# Try to recognize arXiv IDs / DOIs in the filename and fetch title + author
+# from the arXiv / Crossref public APIs before calling the OpenAI model.
+# Saves tokens and gives exact metadata when the filename already encodes the
+# identifier (e.g. 2603.28627v1.pdf, s41586-024-12345-6.pdf). (tray)
+fetch_from_database: {fetch_from_database}
+
+# When the filename matches a known pattern AND a database lookup succeeds,
+# skip the Rename/Cancel confirmation dialog (the metadata is authoritative,
+# so nothing for the user to double-check). Only matters when
+# require_confirmation is also on. (tray)
+auto_rename_on_match: {auto_rename_on_match}
 
 # --- Tuning -----------------------------------------------------------------
 
@@ -103,8 +117,13 @@ class Config(BaseModel):
     request_timeout: float = 60.0
     max_retries: int = 2
     log_level: str = "INFO"
-    # Pop a Yes/No dialog before renaming each PDF.
+    # Pop a Rename/Cancel dialog before renaming each PDF.
     require_confirmation: bool = False
+    # Try to identify filenames as arXiv IDs / DOIs and fetch metadata from
+    # their public APIs before falling back to the LLM.
+    fetch_from_database: bool = True
+    # Skip the confirmation dialog when the database lookup found a match.
+    auto_rename_on_match: bool = False
 
     @field_validator("watch_folder")
     @classmethod
@@ -171,6 +190,8 @@ def write_config(path: Path, data: dict) -> None:
         api_key_line=api_key_line,
         filename_format=_scalar(data.get("filename_format", "{title}_({original})_{author}")),
         require_confirmation=_scalar(bool(data.get("require_confirmation", False))),
+        fetch_from_database=_scalar(bool(data.get("fetch_from_database", True))),
+        auto_rename_on_match=_scalar(bool(data.get("auto_rename_on_match", False))),
         debounce_seconds=_scalar(float(data.get("debounce_seconds", 1.0))),
         request_timeout=_scalar(float(data.get("request_timeout", 60.0))),
         max_retries=_scalar(int(data.get("max_retries", 2))),

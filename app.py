@@ -135,6 +135,14 @@ def main(argv: list[str] | None = None) -> int:
             worker.require_confirmation = value
             update_yaml(args.config, require_confirmation=value)
 
+        def _set_fetch(value: bool) -> None:
+            worker.fetch_from_database = value
+            update_yaml(args.config, fetch_from_database=value)
+
+        def _set_auto_rename(value: bool) -> None:
+            worker.auto_rename_on_match = value
+            update_yaml(args.config, auto_rename_on_match=value)
+
         autostart_supported = system.autostart_supported()
         startup_message = (
             f"Watching {config.watch_folder.name}"
@@ -148,6 +156,10 @@ def main(argv: list[str] | None = None) -> int:
             is_paused=lambda: worker.paused,
             on_confirm_changed=_set_confirmation,
             is_confirm=lambda: worker.require_confirmation,
+            on_fetch_changed=_set_fetch,
+            is_fetch=lambda: worker.fetch_from_database,
+            on_auto_rename_changed=_set_auto_rename,
+            is_auto_rename=lambda: worker.auto_rename_on_match,
             on_autostart_changed=(system.set_autostart if autostart_supported else None),
             is_autostart=(system.autostart_enabled if autostart_supported else None),
             on_settings=system.open_settings,

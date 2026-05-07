@@ -1,0 +1,52 @@
+# ============================================================================
+# Academic paper identifier patterns used by src/lookup.py
+# ============================================================================
+# Each source has:
+#   name:     human-readable label (shown in logs)
+#   api:      which backend to use  -> "arxiv" | "crossref"
+#   prefix:   (crossref only, optional) DOI prefix prepended to the captured id
+#             before querying Crossref. Omit for generic DOI captures.
+#   patterns: list of Python regex strings; each MUST define (?P<id>...)
+#             capturing the identifier to look up.
+#
+# Patterns are applied with re.search against the cleaned filename stem
+# (browser duplicate markers like " (1)" are stripped first). First match
+# wins, so order matters: put specific patterns before generic ones.
+# ----------------------------------------------------------------------------
+
+sources:
+  # --- arXiv --------------------------------------------------------------
+  - name: arXiv
+    api: arxiv
+    patterns:
+      - '(?P<id>\d{4}\.\d{4,5})(v\d+)?'          # 2603.28627 or 2603.28627v1
+      - 'arxiv[-_ ](?P<id>\d{4}\.\d{4,5})(v\d+)?'
+      - '(?P<id>[a-z\-]+/\d{7})'                 # legacy e.g. math/0601001
+
+  # --- Nature family (DOI prefix 10.1038) ---------------------------------
+  - name: Nature
+    api: crossref
+    prefix: "10.1038/"
+    patterns:
+      - '(?P<id>s\d{5}-\d{3}-\d{4,5}-\w)'        # s41586-024-12345-6
+
+  # --- Science family (DOI prefix 10.1126) --------------------------------
+  - name: Science
+    api: crossref
+    prefix: "10.1126/"
+    patterns:
+      - '(?P<id>science\.\w{3,6}\d+)'            # science.adh1234
+      - '(?P<id>sciadv\.\w+)'                    # sciadv.abc1234
+
+  # --- APS: Phys Rev Lett / PRB / PRA etc. (DOI prefix 10.1103) -----------
+  - name: APS
+    api: crossref
+    prefix: "10.1103/"
+    patterns:
+      - '(?P<id>PhysRev[A-Za-z]*\.\d+\.\d+)'     # PhysRevLett / PhysRevX / PhysRevMaterials etc.
+
+  # --- Generic DOI anywhere in the filename -------------------------------
+  - name: Generic DOI
+    api: crossref
+    patterns:
+      - '(?P<id>10\.\d{4,9}/[^\s/]+)'

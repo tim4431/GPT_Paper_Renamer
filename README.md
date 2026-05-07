@@ -28,6 +28,8 @@ On first launch the script creates a local `.venv/`, installs dependencies, runs
 | Watching: *folder* | info only |
 | **Pause / Resume** | stop/start reacting to new files |
 | **Ask before rename** | toggle Rename/Cancel prompt before each rename (persisted to `config.yaml`) |
+| **Fetch from database** | when on, recognize arXiv IDs / DOIs in the filename and fetch metadata from arXiv / Crossref instead of calling GPT (persisted) |
+| **Auto-rename on match** | when both *Ask before rename* and this are on, a successful database match skips the dialog — the metadata is authoritative (persisted) |
 | **Start at login** | toggle autostart (Windows registry / macOS LaunchAgent) |
 | Open watch folder | reveal in Explorer/Finder |
 | View log | open `app.log` |
